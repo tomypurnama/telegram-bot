@@ -52,7 +52,7 @@ def auto_check():
             old = last_status.get(d)
 
             if old and old != status:
-                msg = f"🚨 STATUS CHANGE\n\n{d}\n{old.upper()} → {status.upper()}\n⏱ {datetime.now().strftime('%H:%M:%S')}"
+                msg = f"🚨 STATUS CHANGE\n\n{d}\n{old.upper()} → {status.upper()}\n⏱ {(datetime.utcnow().replace(hour=(datetime.utcnow().hour+7)%24)).strftime('%H:%M:%S')}"
                 bot.send_message(chat_id_global, msg)
 
             last_status[d] = status
@@ -96,7 +96,7 @@ def check_all(msg):
 
     hasil = "✅ CHECK COMPLETED\n\n"
     hasil += f"📂 Total Domain: {len(domains)}\n"
-    hasil += f"⏱ Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+    hasil += f"⏱ Time: {(datetime.utcnow().replace(hour=(datetime.utcnow().hour+7)%24)).strftime('%H:%M:%S')}\n\n"
     hasil += "📊 RESULTS:\n\n"
 
     safe = blocked = error = 0

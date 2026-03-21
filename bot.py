@@ -11,7 +11,7 @@ domains = []
 def cek_nawala(domain):
     resolver = dns.resolver.Resolver()
 
-    # coba DNS Nawala dulu
+    # coba DNS Nawala
     resolver.nameservers = ["180.131.144.144"]
 
     try:
@@ -20,7 +20,7 @@ def cek_nawala(domain):
     except:
         pass
 
-    # fallback ke DNS normal
+    # fallback DNS global
     resolver.nameservers = ["8.8.8.8"]
 
     try:
@@ -30,8 +30,6 @@ def cek_nawala(domain):
         return "blocked"
     except:
         return "error"
-
-# ================= COMMAND ================= #
 
 @bot.message_handler(commands=['start'])
 def start(msg):

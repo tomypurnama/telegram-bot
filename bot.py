@@ -8,11 +8,20 @@ bot = telebot.TeleBot(TOKEN)
 
 domains = []
 
-NAWALA_DNS = ["180.131.144.144", "180.131.145.145"]
-
 def cek_nawala(domain):
     resolver = dns.resolver.Resolver()
-    resolver.nameservers = NAWALA_DNS
+
+    # coba DNS Nawala dulu
+    resolver.nameservers = ["180.131.144.144"]
+
+    try:
+        resolver.resolve(domain, "A")
+        return "safe"
+    except:
+        pass
+
+    # fallback ke DNS normal
+    resolver.nameservers = ["8.8.8.8"]
 
     try:
         resolver.resolve(domain, "A")

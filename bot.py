@@ -1,127 +1,90 @@
 import telebot
 import os
-import dns.resolver
-from datetime import datetime
-import threading
-import time
 
 TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-domains = []
-last_status = {}
-chat_id_global = None
+# ================= DATABASE KALORI ================= #
 
-INTERVAL = 300  # 5 menit
+kalori_db = {
+    "nasi": 200,
+    "ayam": 250,
+    "ayam goreng": 300,
+    "mie": 350,
+    "telur": 150,
+    "roti": 120,
+    "kopi": 50,
+    "teh": 30,
+    "susu": 180,
+    "burger": 500,
+    "pizza": 600
+}
 
-def cek_nawala(domain):
-    resolver = dns.resolver.Resolver()
+# simpan data user
+user_data = {}
 
-    # coba DNS Nawala
-    resolver.nameservers = ["180.131.144.144"]
+# ================= FUNCTION ================= #
 
-    try:
-        resolver.resolve(domain, "A")
-        return "safe"
-    except:
-        pass
+def hitung_kalori(text):
+    total = 0
+    detail = []
 
-    # fallback DNS global
-    resolver.nameservers = ["8.8.8.8"]
+    text = text.lower()
 
-    try:
-        resolver.resolve(domain, "A")
-        return "safe"
-    except dns.resolver.NXDOMAIN:
-        return "blocked"
-    except:
-        return "error"
+    for makanan in kalori_db:
+        if makanan in text:
+            kal = kalori_db[makanan]
+            total += kal
+            detail.append(f"{makanan}: {kal} kcal")
 
-# ================= AUTO CHECK ================= #
-
-def auto_check():
-    global last_status
-
-    while True:
-        if not domains or not chat_id_global:
-            time.sleep(10)
-            continue
-
-        for d in domains:
-            status = cek_nawala(d)
-            old = last_status.get(d)
-
-            if old and old != status:
-                msg = f"🚨 STATUS CHANGE\n\n{d}\n{old.upper()} → {status.upper()}\n⏱ {(datetime.utcnow().replace(hour=(datetime.utcnow().hour+7)%24)).strftime('%H:%M:%S')}"
-                bot.send_message(chat_id_global, msg)
-
-            last_status[d] = status
-
-        time.sleep(INTERVAL)
-
-threading.Thread(target=auto_check, daemon=True).start()
+    return total, detail
 
 # ================= COMMAND ================= #
 
 @bot.message_handler(commands=['start'])
 def start(msg):
-    global chat_id_global
-    chat_id_global = msg.chat.id
-    bot.reply_to(msg, "🤖 BOT NAWALA MONITOR READY\n\n/add domain.com\n/check")
+    bot.reply_to(msg, "🍽 BOT KALORI AKTIF\n\n/note makanan\n/total\n/reset")
 
-@bot.message_handler(commands=['add'])
-def add_domain(msg):
-    global chat_id_global
-    chat_id_global = msg.chat.id
+@bot.message_handler(commands=['note'])
+def note(msg):
+    user_id = msg.chat.id
 
     try:
-        domain = msg.text.split(" ")[1].lower()
-        if domain not in domains:
-            domains.append(domain)
-            last_status[domain] = None
-            bot.reply_to(msg, f"✅ Ditambahkan:\n{domain}")
-        else:
-            bot.reply_to(msg, "⚠ Sudah ada")
+        text = msg.text.split(" ", 1)[1]
     except:
-        bot.reply_to(msg, "Format: /add domain.com")
-
-@bot.message_handler(commands=['check'])
-def check_all(msg):
-    global chat_id_global
-    chat_id_global = msg.chat.id
-
-    if not domains:
-        bot.reply_to(msg, "⚠ Belum ada domain")
+        bot.reply_to(msg, "Format: /note nasi ayam goreng")
         return
 
-    hasil = "✅ CHECK COMPLETED\n\n"
-    hasil += f"📂 Total Domain: {len(domains)}\n"
-    hasil += f"⏱ Time: {(datetime.utcnow().replace(hour=(datetime.utcnow().hour+7)%24)).strftime('%H:%M:%S')}\n\n"
-    hasil += "📊 RESULTS:\n\n"
+    total, detail = hitung_kalori(text)
 
-    safe = blocked = error = 0
+    if user_id not in user_data:
+        user_data[user_id] = 0
 
-    for d in domains:
-        status = cek_nawala(d)
+    user_data[user_id] += total
 
-        if status == "safe":
-            hasil += f"{d}  🟢\n"
-            safe += 1
-        elif status == "blocked":
-            hasil += f"{d}  🔴\n"
-            blocked += 1
-        else:
-            hasil += f"{d}  ⚠\n"
-            error += 1
+    hasil = "🍽 Makanan:\n"
+    hasil += text + "\n\n"
 
-        last_status[d] = status
+    hasil += "🔥 Detail:\n"
+    hasil += "\n".join(detail) if detail else "Tidak dikenali"
 
-    hasil += "\n"
-    hasil += f"🟢 Safe: {safe}\n"
-    hasil += f"🔴 Blocked: {blocked}\n"
-    hasil += f"⚠ Error: {error}"
+    hasil += f"\n\nTOTAL: {total} kcal"
 
     bot.reply_to(msg, hasil)
 
-print("Bot jalan + auto monitor aktif...")
+@bot.message_handler(commands=['total'])
+def total(msg):
+    user_id = msg.chat.id
+    total = user_data.get(user_id, 0)
+
+    bot.reply_to(msg, f"📊 Total kalori hari ini:\n🔥 {total} kcal")
+
+@bot.message_handler(commands=['reset'])
+def reset(msg):
+    user_id = msg.chat.id
+    user_data[user_id] = 0
+
+    bot.reply_to(msg, "🔄 Data direset")
+
+print("Bot kalori jalan...")
 bot.infinity_polling()

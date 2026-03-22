@@ -5,8 +5,8 @@ import datetime
 import threading
 import time
 
-TOKEN = "ISI_TOKEN_KAMU"
-ADMIN_ID = 123456789  # ganti chat id kamu
+TOKEN = "8538171461:AAGH1HGSMc7BB53MUPw6qGopyKDmZ6zxXdw"
+ADMIN_ID = 1413016663  # ganti chat id kamu
 
 bot = telebot.TeleBot(TOKEN)
 

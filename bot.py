@@ -29,7 +29,13 @@ def today():
     return str(datetime.date.today())
 
 def now():
-    return datetime.datetime.now().strftime("%H:%M")
+    return datetime.datetime.now()
+
+def waktu_str(dt):
+    return dt.strftime("%H:%M")
+
+def tanggal_str(dt):
+    return dt.strftime("%Y-%m-%d")
 
 def rupiah(n):
     return "Rp {:,}".format(n).replace(",", ".")
@@ -50,7 +56,6 @@ def init_user(db,chat_id):
 def menu(chat_id):
     m = InlineKeyboardMarkup()
 
-    # 🔥 2 KOLOM
     m.row(
         InlineKeyboardButton("📊 INVESTASI",callback_data="INVEST"),
         InlineKeyboardButton("💰 HASIL",callback_data="HASIL")
@@ -76,7 +81,7 @@ def cb(call):
     chat_id = call.message.chat.id
     data = call.data
 
-    # ===== INVESTASI =====
+    # INVEST
     if data=="INVEST":
         m = InlineKeyboardMarkup()
         for i in range(0,len(PASARAN),2):
@@ -85,7 +90,6 @@ def cb(call):
             if i+1 < len(PASARAN):
                 row.append(InlineKeyboardButton(PASARAN[i+1],callback_data=f"INV_{PASARAN[i+1]}"))
             m.row(*row)
-
         bot.send_message(chat_id,"Pilih Pasaran:",reply_markup=m)
 
     elif data.startswith("INV_"):
@@ -93,22 +97,20 @@ def cb(call):
         user_mode[chat_id] = ("INVEST",p)
         bot.send_message(chat_id,f"Input nominal {p}")
 
-    # ===== HASIL =====
+    # HASIL
     elif data=="HASIL":
         user_mode[chat_id] = ("HASIL","HASIL")
         bot.send_message(chat_id,"Input nominal HASIL")
 
-    # ===== REF =====
+    # REF
     elif data=="REF":
         m = InlineKeyboardMarkup()
-
         for i in range(0,len(REF_LIST),2):
-            row = []
+            row=[]
             row.append(InlineKeyboardButton(REF_LIST[i],callback_data=f"REF_{REF_LIST[i]}"))
             if i+1 < len(REF_LIST):
                 row.append(InlineKeyboardButton(REF_LIST[i+1],callback_data=f"REF_{REF_LIST[i+1]}"))
             m.row(*row)
-
         bot.send_message(chat_id,"Pilih REF:",reply_markup=m)
 
     elif data.startswith("REF_"):
@@ -116,7 +118,7 @@ def cb(call):
         user_mode[chat_id] = ("REF",r)
         bot.send_message(chat_id,f"Input nominal {r}")
 
-    # ===== LAPORAN =====
+    # LAPORAN
     elif data=="LAPORAN":
         m = InlineKeyboardMarkup()
         m.row(
@@ -132,7 +134,7 @@ def cb(call):
     elif data=="L7": laporan(chat_id,7,"MINGGUAN")
     elif data=="L30": laporan(chat_id,30,"BULANAN")
 
-    # ===== HAPUS =====
+    # HAPUS
     elif data=="HAPUS":
         hapus_menu(chat_id)
 
@@ -153,6 +155,7 @@ def input_nominal(msg):
         return
 
     jumlah = int(msg.text)
+    now_dt = now()
 
     db = load_db()
     init_user(db,chat_id)
@@ -172,7 +175,8 @@ def input_nominal(msg):
     user["history"].append({
         "type": key,
         "amount": jumlah,
-        "time": now()
+        "time": waktu_str(now_dt),
+        "date": tanggal_str(now_dt)
     })
 
     save_db(db)
@@ -202,11 +206,15 @@ def laporan(chat_id,days,label):
     bot.send_message(chat_id,
 f"""📊 LAPORAN {label}
 
+📅 {today()}
+
 💸 Modal: {rupiah(keluar)}
 💰 Hasil: {rupiah(hasil)}
 📥 REF: {rupiah(ref)}
 
 📈 Profit: {rupiah(profit)}
+
+🕒 Update: {datetime.datetime.now().strftime("%H:%M")}
 """
 )
 
@@ -224,7 +232,7 @@ def hapus_menu(chat_id):
     m = InlineKeyboardMarkup()
 
     for i,h in enumerate(history):
-        txt = f"{h['time']} {h['type']} {rupiah(h['amount'])}"
+        txt = f"{h['time']} | {h['date']} | {h['type']} {rupiah(h['amount'])}"
         m.add(InlineKeyboardButton(txt,callback_data=f"DEL_{i}"))
 
     bot.send_message(chat_id,"Pilih data:",reply_markup=m)

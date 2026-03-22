@@ -2,7 +2,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import json, datetime, threading, time
 
-TOKEN = "ISI_TOKEN_KAMU"
+TOKEN = "8538171461:AAGH1HGSMc7BB53MUPw6qGopyKDmZ6zxXdw"
 
 bot = telebot.TeleBot(TOKEN)
 bot.remove_webhook()

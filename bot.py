@@ -1,31 +1,27 @@
 import telebot
-import time
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import json, datetime, threading, time
 
-TOKEN = "8538171461:AAGH1HGSMc7BB53MUPw6qGopyKDmZ6zxXdw"
+TOKEN = "ISI_TOKEN_KAMU"
 
 bot = telebot.TeleBot(TOKEN)
-
 bot.remove_webhook()
 time.sleep(1)
 
 DB_FILE = "database.json"
 
-PASARAN = ["SDY", "TM4", "TM5", "JWP", "HKL"]
-NOMINAL = [50000, 100000, 200000, 500000]
+PASARAN = ["SDY","TT4","TT5","JWP","HKL","JKT"]
+REF_LIST = ["GAS","CCL","KLT","LMB","AS7","JT7","TOP","BGW","GEM","GSK","HK7"]
 
 # ================= DATABASE =================
 def load_db():
     try:
-        with open(DB_FILE, "r") as f:
-            return json.load(f)
+        return json.load(open(DB_FILE))
     except:
         return {}
 
-def save_db(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+def save_db(db):
+    json.dump(db, open(DB_FILE,"w"), indent=2)
 
 def today():
     return str(datetime.date.today())
@@ -38,233 +34,184 @@ def rupiah(n):
 
 # ================= MENU =================
 def menu(chat_id):
-    markup = InlineKeyboardMarkup()
-
-    markup.row(
-        InlineKeyboardButton("SDY", callback_data="SDY"),
-        InlineKeyboardButton("TM4", callback_data="TM4")
-    )
-    markup.row(
-        InlineKeyboardButton("TM5", callback_data="TM5"),
-        InlineKeyboardButton("JWP", callback_data="JWP")
-    )
-    markup.row(
-        InlineKeyboardButton("HKL", callback_data="HKL"),
-        InlineKeyboardButton("💰 HASIL", callback_data="HASIL")
-    )
-    markup.row(
-        InlineKeyboardButton("📊 LAPORAN", callback_data="LAPORAN"),
-        InlineKeyboardButton("📈 GRAFIK", callback_data="GRAFIK")
-    )
-    markup.row(
-        InlineKeyboardButton("🎯 SET TARGET", callback_data="TARGET"),
-        InlineKeyboardButton("🗑️ HAPUS", callback_data="HAPUS")
-    )
-
-    bot.send_message(chat_id, "📊 MENU INVESTASI", reply_markup=markup)
-
-# ================= NOMINAL =================
-def menu_nominal(chat_id, mode):
-    markup = InlineKeyboardMarkup()
-
-    for n in NOMINAL:
-        markup.add(InlineKeyboardButton(rupiah(n), callback_data=f"NOM_{mode}_{n}"))
-
-    markup.add(InlineKeyboardButton("⬅️ KEMBALI", callback_data="BACK"))
-
-    bot.send_message(chat_id, f"Pilih nominal {mode}", reply_markup=markup)
+    m = InlineKeyboardMarkup()
+    m.row(InlineKeyboardButton("📊 LAPORAN",callback_data="LAPORAN"))
+    m.row(InlineKeyboardButton("📈 HASIL",callback_data="HASIL_MENU"))
+    m.row(InlineKeyboardButton("📥 REF",callback_data="REF_MENU"))
+    m.row(InlineKeyboardButton("💳 PAYMENT",callback_data="PAYMENT"))
+    m.row(InlineKeyboardButton("🗑️ HAPUS",callback_data="HAPUS"))
+    bot.send_message(chat_id,"📊 MENU UTAMA",reply_markup=m)
 
 # ================= START =================
 @bot.message_handler(commands=['start'])
 def start(msg):
     menu(msg.chat.id)
 
+# ================= INIT USER =================
+def init_user(db,chat_id):
+    t = today()
+    if t not in db: db[t]={"users":{}}
+    if str(chat_id) not in db[t]["users"]:
+        db[t]["users"][str(chat_id)]={
+            "keluar":{},
+            "hasil":0,
+            "ref":{},
+            "history":[],
+            "payment":[]
+        }
+
+# ================= INPUT PARSE =================
+@bot.message_handler(func=lambda m: True)
+def handle(msg):
+    text = msg.text.upper()
+    chat_id = msg.chat.id
+
+    db = load_db()
+    init_user(db,chat_id)
+
+    user = db[today()]["users"][str(chat_id)]
+
+    parts = text.split()
+    if len(parts)<2: return
+
+    key = parts[0]
+    try:
+        amount = int(parts[1])
+    except:
+        return
+
+    # ===== INVESTASI =====
+    if key in PASARAN:
+        user["keluar"][key]=user["keluar"].get(key,0)+amount
+        user["history"].append({"type":key,"amount":amount,"time":now()})
+
+    # ===== HASIL =====
+    elif key=="HASIL":
+        user["hasil"]+=amount
+        user["history"].append({"type":"HASIL","amount":amount,"time":now()})
+
+    # ===== REF =====
+    elif key in REF_LIST:
+        user["ref"][key]=user["ref"].get(key,0)+amount
+        user["history"].append({"type":key,"amount":amount,"time":now()})
+
+    # ===== PAYMENT BAYAR =====
+    elif key=="BAYAR":
+        nama = parts[1]
+        bayar = int(parts[2])
+        for p in user["payment"]:
+            if p["nama"]==nama:
+                p["bayar"]+=bayar
+
+    save_db(db)
+    bot.send_message(chat_id,"✅ Tercatat")
+
+# ================= LAPORAN =================
+def laporan(chat_id,days=1):
+    db = load_db()
+    total_keluar,total_hasil,total_ref = 0,0,0
+
+    for i in range(days):
+        d = str(datetime.date.today()-datetime.timedelta(days=i))
+        if d not in db: continue
+        if str(chat_id) not in db[d]["users"]: continue
+
+        u = db[d]["users"][str(chat_id)]
+
+        total_keluar += sum(u["keluar"].values())
+        total_hasil += u["hasil"]
+        total_ref += sum(u["ref"].values())
+
+    profit = total_hasil+total_ref-total_keluar
+
+    bot.send_message(chat_id,
+f"""📊 LAPORAN
+
+Modal: {rupiah(total_keluar)}
+Hasil: {rupiah(total_hasil)}
+REF: {rupiah(total_ref)}
+
+💰 Profit: {rupiah(profit)}"""
+)
+
 # ================= CALLBACK =================
-@bot.callback_query_handler(func=lambda call: True)
-def callback(call):
+@bot.callback_query_handler(func=lambda c:True)
+def cb(call):
     chat_id = call.message.chat.id
     data = call.data
 
-    if data == "BACK":
-        menu(chat_id)
-        return
+    if data=="LAPORAN": laporan(chat_id,1)
 
-    if data == "LAPORAN":
-        kirim_laporan(chat_id)
-        return
+    elif data=="HASIL_MENU":
+        m=InlineKeyboardMarkup()
+        m.row(
+            InlineKeyboardButton("Harian",callback_data="H1"),
+            InlineKeyboardButton("Mingguan",callback_data="H7"),
+            InlineKeyboardButton("Bulanan",callback_data="H30")
+        )
+        bot.send_message(chat_id,"📈 PILIH PERIODE",reply_markup=m)
 
-    if data == "GRAFIK":
-        kirim_grafik(chat_id)
-        return
+    elif data=="H1": laporan(chat_id,1)
+    elif data=="H7": laporan(chat_id,7)
+    elif data=="H30": laporan(chat_id,30)
 
-    if data == "TARGET":
-        set_target(chat_id)
-        return
+    elif data=="REF_MENU":
+        bot.send_message(chat_id,"Gunakan format: GAS 50000 dll")
 
-    if data == "HAPUS":
-        tampilkan_history(chat_id)
-        return
+    elif data=="PAYMENT":
+        bot.send_message(chat_id,"Format:\nTAMBAH Nama Nominal Tanggal\nBAYAR Nama Nominal")
 
-    if data in PASARAN or data == "HASIL":
-        menu_nominal(chat_id, data)
-        return
-
-    if data.startswith("NOM_"):
-        _, mode, jumlah = data.split("_")
-        jumlah = int(jumlah)
-
-        db = load_db()
-        t = today()
-
-        if t not in db:
-            db[t] = {}
-
-        if str(chat_id) not in db[t]:
-            db[t][str(chat_id)] = {
-                "keluar": {},
-                "masuk": 0,
-                "history": [],
-                "target": 0
-            }
-
-        user = db[t][str(chat_id)]
-
-        if mode == "HASIL":
-            user["masuk"] += jumlah
-        else:
-            if mode not in user["keluar"]:
-                user["keluar"][mode] = 0
-            user["keluar"][mode] += jumlah
-
-        user["history"].append({
-            "type": mode,
-            "amount": jumlah,
-            "time": now()
-        })
-
-        save_db(db)
-
-        cek_target(chat_id)
-
-        bot.send_message(chat_id, f"✅ {mode} {rupiah(jumlah)}")
-        menu(chat_id)
-        return
-
-    if data.startswith("DEL_"):
-        index = int(data.split("_")[1])
-        hapus(chat_id, index)
-        return
-
-# ================= TARGET =================
-user_target_input = {}
-
-def set_target(chat_id):
-    user_target_input[chat_id] = True
-    bot.send_message(chat_id, "Masukkan target profit (angka saja)")
-
-@bot.message_handler(func=lambda msg: True)
-def input_target(msg):
-    chat_id = msg.chat.id
-
-    if chat_id not in user_target_input:
-        return
-
-    if not msg.text.isdigit():
-        return
-
-    jumlah = int(msg.text)
-
-    db = load_db()
-    t = today()
-
-    if t not in db:
-        db[t] = {}
-
-    if str(chat_id) not in db[t]:
-        db[t][str(chat_id)] = {"keluar": {}, "masuk": 0, "history": [], "target": 0}
-
-    db[t][str(chat_id)]["target"] = jumlah
-
-    save_db(db)
-    user_target_input.pop(chat_id)
-
-    bot.send_message(chat_id, f"🎯 Target diset: {rupiah(jumlah)}")
-    menu(chat_id)
-
-def cek_target(chat_id):
-    db = load_db()
-    t = today()
-
-    user = db[t][str(chat_id)]
-
-    keluar = sum(user["keluar"].values())
-    profit = user["masuk"] - keluar
-
-    if user["target"] and profit >= user["target"]:
-        bot.send_message(chat_id, f"🎉 TARGET TERCAPAI!\nProfit: {rupiah(profit)}")
-
-# ================= GRAFIK =================
-def kirim_grafik(chat_id):
-    db = load_db()
-    labels = []
-    data_profit = []
-
-    for date in sorted(db.keys()):
-        if str(chat_id) not in db[date]:
-            continue
-
-        user = db[date][str(chat_id)]
-        keluar = sum(user["keluar"].values())
-        profit = user["masuk"] - keluar
-
-        labels.append(date)
-        data_profit.append(profit)
-
-    if not labels:
-        bot.send_message(chat_id, "Belum ada data")
-        return
-
-    chart_url = f"https://quickchart.io/chart?c={{type:'line',data:{{labels:{labels},datasets:[{{label:'Profit',data:{data_profit}}}]}}}}"
-
-    bot.send_photo(chat_id, chart_url)
-
-# ================= HISTORY =================
-def tampilkan_history(chat_id):
-    db = load_db()
-    t = today()
-
-    if t not in db or str(chat_id) not in db[t]:
-        bot.send_message(chat_id, "❌ Tidak ada data")
-        return
-
-    history = db[t][str(chat_id)]["history"]
-
-    markup = InlineKeyboardMarkup()
-
-    for i, item in enumerate(history):
-        teks = f"{item['time']} | {item['type']} - {rupiah(item['amount'])}"
-        markup.add(InlineKeyboardButton(teks, callback_data=f"DEL_{i}"))
-
-    bot.send_message(chat_id, "Pilih yang mau dihapus:", reply_markup=markup)
+    elif data=="HAPUS":
+        hapus_menu(chat_id)
 
 # ================= HAPUS =================
-def hapus(chat_id, index):
-    db = load_db()
-    t = today()
+def hapus_menu(chat_id):
+    db=load_db()
+    t=today()
 
-    user = db[t][str(chat_id)]
+    if t not in db: return
+    if str(chat_id) not in db[t]["users"]: return
 
-    item = user["history"].pop(index)
+    history=db[t]["users"][str(chat_id)]["history"]
 
-    if item["type"] == "HASIL":
-        user["masuk"] -= item["amount"]
+    m=InlineKeyboardMarkup()
+    for i,h in enumerate(history):
+        txt=f"{h['time']} {h['type']} {rupiah(h['amount'])}"
+        m.add(InlineKeyboardButton(txt,callback_data=f"DEL_{i}"))
+
+    bot.send_message(chat_id,"Pilih hapus:",reply_markup=m)
+
+@bot.callback_query_handler(func=lambda c:c.data.startswith("DEL_"))
+def del_data(call):
+    chat_id=call.message.chat.id
+    idx=int(call.data.split("_")[1])
+
+    db=load_db()
+    user=db[today()]["users"][str(chat_id)]
+
+    item=user["history"].pop(idx)
+
+    if item["type"]=="HASIL":
+        user["hasil"]-=item["amount"]
+    elif item["type"] in REF_LIST:
+        user["ref"][item["type"]]-=item["amount"]
     else:
-        user["keluar"][item["type"]] -= item["amount"]
+        user["keluar"][item["type"]]-=item["amount"]
 
     save_db(db)
-
-    bot.send_message(chat_id, f"🗑️ Dihapus {item['type']} {rupiah(item['amount'])}")
+    bot.send_message(chat_id,"🗑️ Dihapus")
     menu(chat_id)
+
+# ================= AUTO RESET =================
+def auto():
+    while True:
+        now=datetime.datetime.now()
+        if now.hour==0 and now.minute==0:
+            print("RESET")
+            time.sleep(60)
+        time.sleep(10)
+
+threading.Thread(target=auto).start()
 
 # ================= RUN =================
 bot.infinity_polling()

@@ -1,90 +1,158 @@
 import telebot
-import os
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import json
+import datetime
+import threading
+import time
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = "ISI_TOKEN_KAMU"
+ADMIN_ID = 123456789  # ganti chat id kamu
+
 bot = telebot.TeleBot(TOKEN)
 
-# ================= DATABASE KALORI ================= #
+DB_FILE = "database.json"
+user_state = {}
 
-kalori_db = {
-    "nasi": 200,
-    "ayam": 250,
-    "ayam goreng": 300,
-    "mie": 350,
-    "telur": 150,
-    "roti": 120,
-    "kopi": 50,
-    "teh": 30,
-    "susu": 180,
-    "burger": 500,
-    "pizza": 600
-}
+# ================= DATABASE =================
+def load_db():
+    try:
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
 
-# simpan data user
-user_data = {}
+def save_db(data):
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
-# ================= FUNCTION ================= #
+def today():
+    return str(datetime.date.today())
 
-def hitung_kalori(text):
-    total = 0
-    detail = []
+def rupiah(n):
+    return "Rp {:,}".format(n).replace(",", ".")
 
-    text = text.lower()
+# ================= MENU =================
+def menu(chat_id):
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("SDY", callback_data="SDY"),
+        InlineKeyboardButton("TTM4", callback_data="TTM4")
+    )
+    markup.row(
+        InlineKeyboardButton("TTM5", callback_data="TTM5"),
+        InlineKeyboardButton("HKL", callback_data="HKL")
+    )
+    markup.row(
+        InlineKeyboardButton("HASIL", callback_data="HASIL")
+    )
+    markup.row(
+        InlineKeyboardButton("📊 LAPORAN", callback_data="LAPORAN")
+    )
 
-    for makanan in kalori_db:
-        if makanan in text:
-            kal = kalori_db[makanan]
-            total += kal
-            detail.append(f"{makanan}: {kal} kcal")
+    bot.send_message(chat_id, "📊 MENU INVESTASI", reply_markup=markup)
 
-    return total, detail
-
-# ================= COMMAND ================= #
-
+# ================= START =================
 @bot.message_handler(commands=['start'])
 def start(msg):
-    bot.reply_to(msg, "🍽 BOT KALORI AKTIF\n\n/note makanan\n/total\n/reset")
+    menu(msg.chat.id)
 
-@bot.message_handler(commands=['note'])
-def note(msg):
-    user_id = msg.chat.id
+# ================= BUTTON =================
+@bot.callback_query_handler(func=lambda call: True)
+def callback(call):
+    chat_id = call.message.chat.id
+    data = call.data
 
-    try:
-        text = msg.text.split(" ", 1)[1]
-    except:
-        bot.reply_to(msg, "Format: /note nasi ayam goreng")
+    if data == "LAPORAN":
+        kirim_laporan(chat_id)
         return
 
-    total, detail = hitung_kalori(text)
+    user_state[chat_id] = data
+    bot.send_message(chat_id, f"Masukkan nominal untuk {data}")
 
-    if user_id not in user_data:
-        user_data[user_id] = 0
+# ================= INPUT =================
+@bot.message_handler(func=lambda msg: True)
+def handle_input(msg):
+    chat_id = msg.chat.id
 
-    user_data[user_id] += total
+    if chat_id not in user_state:
+        return
 
-    hasil = "🍽 Makanan:\n"
-    hasil += text + "\n\n"
+    if not msg.text.isdigit():
+        return
 
-    hasil += "🔥 Detail:\n"
-    hasil += "\n".join(detail) if detail else "Tidak dikenali"
+    jumlah = int(msg.text)
+    db = load_db()
+    t = today()
 
-    hasil += f"\n\nTOTAL: {total} kcal"
+    if t not in db:
+        db[t] = {"keluar": {}, "masuk": 0}
 
-    bot.reply_to(msg, hasil)
+    mode = user_state[chat_id]
 
-@bot.message_handler(commands=['total'])
-def total(msg):
-    user_id = msg.chat.id
-    total = user_data.get(user_id, 0)
+    if mode == "HASIL":
+        db[t]["masuk"] += jumlah
 
-    bot.reply_to(msg, f"📊 Total kalori hari ini:\n🔥 {total} kcal")
+        bot.send_message(chat_id,
+            f"✅ HASIL MASUK\n+ {rupiah(jumlah)}\n\nTotal: {rupiah(db[t]['masuk'])}"
+        )
+    else:
+        if mode not in db[t]["keluar"]:
+            db[t]["keluar"][mode] = 0
 
-@bot.message_handler(commands=['reset'])
-def reset(msg):
-    user_id = msg.chat.id
-    user_data[user_id] = 0
+        db[t]["keluar"][mode] += jumlah
 
-    bot.reply_to(msg, "🔄 Data direset")
+        bot.send_message(chat_id,
+            f"📉 {mode}\n- {rupiah(jumlah)}\n\nTotal: {rupiah(db[t]['keluar'][mode])}"
+        )
 
-print("Bot kalori jalan...")
+    save_db(db)
+    user_state.pop(chat_id)
+
+    menu(chat_id)
+
+# ================= LAPORAN =================
+def kirim_laporan(chat_id):
+    db = load_db()
+    t = today()
+
+    if t not in db:
+        bot.send_message(chat_id, "Belum ada data hari ini")
+        return
+
+    keluar_text = ""
+    total_keluar = 0
+
+    for k, v in db[t]["keluar"].items():
+        keluar_text += f"{k}: {rupiah(v)}\n"
+        total_keluar += v
+
+    masuk = db[t]["masuk"]
+    saldo = masuk - total_keluar
+
+    bot.send_message(chat_id,
+        f"""📊 LAPORAN {t}
+
+📉 Keluar:
+{keluar_text}
+
+Total Keluar: {rupiah(total_keluar)}
+
+📈 Masuk: {rupiah(masuk)}
+
+💰 Saldo: {rupiah(saldo)}
+"""
+    )
+
+# ================= AUTO JAM 00 =================
+def auto_report():
+    while True:
+        now = datetime.datetime.now()
+        if now.hour == 0 and now.minute == 0:
+            kirim_laporan(ADMIN_ID)
+            time.sleep(60)
+        time.sleep(10)
+
+threading.Thread(target=auto_report).start()
+
+# ================= RUN =================
 bot.infinity_polling()

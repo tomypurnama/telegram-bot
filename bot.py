@@ -1,10 +1,14 @@
 import telebot
+import time
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import json, datetime, threading, time
 
 TOKEN = "8538171461:AAGH1HGSMc7BB53MUPw6qGopyKDmZ6zxXdw"
 
 bot = telebot.TeleBot(TOKEN)
+
+bot.remove_webhook()
+time.sleep(1)
 
 DB_FILE = "database.json"
 

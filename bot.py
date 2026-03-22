@@ -2,16 +2,16 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import json
 import datetime
-import threading
-import time
 
 TOKEN = "8538171461:AAGH1HGSMc7BB53MUPw6qGopyKDmZ6zxXdw"
-ADMIN_ID = 1413016663  # ganti chat id kamu
+ADMIN_ID = 1413016663
 
 bot = telebot.TeleBot(TOKEN)
 
 DB_FILE = "database.json"
 user_state = {}
+
+PASARAN = ["SDY", "TT4", "TT5", "JWP", "HKL"]
 
 # ================= DATABASE =================
 def load_db():
@@ -31,83 +31,150 @@ def today():
 def rupiah(n):
     return "Rp {:,}".format(n).replace(",", ".")
 
-# ================= MENU =================
+# ================= MENU UTAMA =================
 def menu(chat_id):
     markup = InlineKeyboardMarkup()
+
     markup.row(
         InlineKeyboardButton("SDY", callback_data="SDY"),
-        InlineKeyboardButton("TTM4", callback_data="TTM4")
+        InlineKeyboardButton("TT4", callback_data="TT4")
     )
     markup.row(
-        InlineKeyboardButton("TTM5", callback_data="TTM5"),
-        InlineKeyboardButton("HKL", callback_data="HKL")
+        InlineKeyboardButton("TT5", callback_data="TT5"),
+        InlineKeyboardButton("JWP", callback_data="JWP")
     )
     markup.row(
-        InlineKeyboardButton("HASIL", callback_data="HASIL")
+        InlineKeyboardButton("HKL", callback_data="HKL"),
+        InlineKeyboardButton("💰 HASIL", callback_data="HASIL")
     )
     markup.row(
-        InlineKeyboardButton("📊 LAPORAN", callback_data="LAPORAN")
+        InlineKeyboardButton("📊 LAPORAN", callback_data="LAPORAN"),
+        InlineKeyboardButton("🗑️ HAPUS", callback_data="HAPUS")
     )
 
     bot.send_message(chat_id, "📊 MENU INVESTASI", reply_markup=markup)
+
+# ================= NOMINAL BUTTON =================
+def menu_nominal(chat_id, mode):
+    markup = InlineKeyboardMarkup()
+
+    nominal_list = [50000, 100000, 200000, 500000]
+
+    for n in nominal_list:
+        markup.add(InlineKeyboardButton(rupiah(n), callback_data=f"NOM_{mode}_{n}"))
+
+    markup.add(InlineKeyboardButton("⬅️ KEMBALI", callback_data="BACK"))
+
+    bot.send_message(chat_id, f"Pilih nominal untuk {mode}", reply_markup=markup)
 
 # ================= START =================
 @bot.message_handler(commands=['start'])
 def start(msg):
     menu(msg.chat.id)
 
-# ================= BUTTON =================
+# ================= CALLBACK =================
 @bot.callback_query_handler(func=lambda call: True)
 def callback(call):
     chat_id = call.message.chat.id
     data = call.data
 
+    # ================= BACK =================
+    if data == "BACK":
+        menu(chat_id)
+        return
+
+    # ================= LAPORAN =================
     if data == "LAPORAN":
         kirim_laporan(chat_id)
         return
 
-    user_state[chat_id] = data
-    bot.send_message(chat_id, f"Masukkan nominal untuk {data}")
-
-# ================= INPUT =================
-@bot.message_handler(func=lambda msg: True)
-def handle_input(msg):
-    chat_id = msg.chat.id
-
-    if chat_id not in user_state:
+    # ================= HAPUS =================
+    if data == "HAPUS":
+        tampilkan_history(chat_id)
         return
 
-    if not msg.text.isdigit():
+    # ================= PILIH PASARAN =================
+    if data in PASARAN or data == "HASIL":
+        user_state[chat_id] = data
+        menu_nominal(chat_id, data)
         return
 
-    jumlah = int(msg.text)
+    # ================= INPUT NOMINAL =================
+    if data.startswith("NOM_"):
+        _, mode, jumlah = data.split("_")
+        jumlah = int(jumlah)
+
+        db = load_db()
+        t = today()
+
+        if t not in db:
+            db[t] = {"keluar": {}, "masuk": 0, "history": []}
+
+        if mode == "HASIL":
+            db[t]["masuk"] += jumlah
+        else:
+            if mode not in db[t]["keluar"]:
+                db[t]["keluar"][mode] = 0
+            db[t]["keluar"][mode] += jumlah
+
+        db[t]["history"].append({
+            "type": mode,
+            "amount": jumlah
+        })
+
+        save_db(db)
+
+        bot.send_message(chat_id, f"✅ {mode} {rupiah(jumlah)} berhasil dicatat")
+        menu(chat_id)
+        return
+
+    # ================= HAPUS PILIH =================
+    if data.startswith("DEL_"):
+        index = int(data.split("_")[1])
+        hapus_by_index(chat_id, index)
+        return
+
+# ================= TAMPILKAN HISTORY =================
+def tampilkan_history(chat_id):
     db = load_db()
     t = today()
 
-    if t not in db:
-        db[t] = {"keluar": {}, "masuk": 0}
+    if t not in db or not db[t].get("history"):
+        bot.send_message(chat_id, "❌ Tidak ada data")
+        return
 
-    mode = user_state[chat_id]
+    markup = InlineKeyboardMarkup()
+
+    for i, item in enumerate(db[t]["history"]):
+        teks = f"{item['type']} - {rupiah(item['amount'])}"
+        markup.add(InlineKeyboardButton(teks, callback_data=f"DEL_{i}"))
+
+    bot.send_message(chat_id, "Pilih yang mau dihapus:", reply_markup=markup)
+
+# ================= HAPUS =================
+def hapus_by_index(chat_id, index):
+    db = load_db()
+    t = today()
+
+    try:
+        item = db[t]["history"].pop(index)
+    except:
+        bot.send_message(chat_id, "❌ Data tidak ditemukan")
+        return
+
+    mode = item["type"]
+    jumlah = item["amount"]
 
     if mode == "HASIL":
-        db[t]["masuk"] += jumlah
-
-        bot.send_message(chat_id,
-            f"✅ HASIL MASUK\n+ {rupiah(jumlah)}\n\nTotal: {rupiah(db[t]['masuk'])}"
-        )
+        db[t]["masuk"] -= jumlah
     else:
-        if mode not in db[t]["keluar"]:
-            db[t]["keluar"][mode] = 0
-
-        db[t]["keluar"][mode] += jumlah
-
-        bot.send_message(chat_id,
-            f"📉 {mode}\n- {rupiah(jumlah)}\n\nTotal: {rupiah(db[t]['keluar'][mode])}"
-        )
+        db[t]["keluar"][mode] -= jumlah
+        if db[t]["keluar"][mode] <= 0:
+            del db[t]["keluar"][mode]
 
     save_db(db)
-    user_state.pop(chat_id)
 
+    bot.send_message(chat_id, f"🗑️ Dihapus: {mode} {rupiah(jumlah)}")
     menu(chat_id)
 
 # ================= LAPORAN =================
@@ -116,7 +183,7 @@ def kirim_laporan(chat_id):
     t = today()
 
     if t not in db:
-        bot.send_message(chat_id, "Belum ada data hari ini")
+        bot.send_message(chat_id, "Belum ada data")
         return
 
     keluar_text = ""
@@ -130,7 +197,7 @@ def kirim_laporan(chat_id):
     saldo = masuk - total_keluar
 
     bot.send_message(chat_id,
-        f"""📊 LAPORAN {t}
+f"""📊 LAPORAN {t}
 
 📉 Keluar:
 {keluar_text}
@@ -142,17 +209,6 @@ Total Keluar: {rupiah(total_keluar)}
 💰 Saldo: {rupiah(saldo)}
 """
     )
-
-# ================= AUTO JAM 00 =================
-def auto_report():
-    while True:
-        now = datetime.datetime.now()
-        if now.hour == 0 and now.minute == 0:
-            kirim_laporan(ADMIN_ID)
-            time.sleep(60)
-        time.sleep(10)
-
-threading.Thread(target=auto_report).start()
 
 # ================= RUN =================
 bot.infinity_polling()

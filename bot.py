@@ -1,6 +1,7 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import json, datetime, time
+from zoneinfo import ZoneInfo
 
 TOKEN = "8538171461:AAGH1HGSMc7BB53MUPw6qGopyKDmZ6zxXdw"
 
@@ -31,7 +32,7 @@ def today():
     return str(datetime.date.today())
 
 def now():
-    return datetime.datetime.now()
+    return datetime.now(ZoneInfo("Asia/Jakarta"))
 
 def rupiah(n):
     return "Rp {:,}".format(n).replace(",", ".")

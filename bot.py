@@ -1,5 +1,5 @@
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 import json, datetime, time
 from zoneinfo import ZoneInfo
 
@@ -52,19 +52,11 @@ def init_user(db, chat_id):
 
 # ================= MENU =================
 def menu(chat_id):
-    m = InlineKeyboardMarkup()
+    m = ReplyKeyboardMarkup(resize_keyboard=True)
 
-    m.row(
-        InlineKeyboardButton("📊 INVESTASI", callback_data="INVEST"),
-        InlineKeyboardButton("💰 HASIL", callback_data="HASIL")
-    )
-    m.row(
-        InlineKeyboardButton("📥 REF", callback_data="REF"),
-        InlineKeyboardButton("📊 LAPORAN", callback_data="LAPORAN")
-    )
-    m.row(
-        InlineKeyboardButton("🗑️ HAPUS", callback_data="HAPUS")
-    )
+    m.row("📊 INVESTASI", "💰 HASIL")
+    m.row("📥 REF", "📊 LAPORAN")
+    m.row("🗑️ HAPUS")
 
     bot.send_message(chat_id, "📊 MENU KEUANGAN", reply_markup=m)
 
@@ -73,86 +65,103 @@ def menu(chat_id):
 def start(msg):
     menu(msg.chat.id)
 
-# ================= CALLBACK =================
-@bot.callback_query_handler(func=lambda call: True)
-def callback(call):
-    chat_id = call.message.chat.id
-    data = call.data
+# ================= MENU HANDLER =================
+@bot.message_handler(func=lambda msg: msg.text in [
+    "📊 INVESTASI","💰 HASIL","📥 REF","📊 LAPORAN","🗑️ HAPUS"
+])
+def menu_handler(msg):
+    chat_id = msg.chat.id
+    text = msg.text
 
-    # ===== INVESTASI =====
-    if data == "INVEST":
-        m = InlineKeyboardMarkup()
-        for i in range(0, len(PASARAN), 2):
-            row = []
-            row.append(InlineKeyboardButton(PASARAN[i], callback_data=f"INV_{PASARAN[i]}"))
-            if i+1 < len(PASARAN):
-                row.append(InlineKeyboardButton(PASARAN[i+1], callback_data=f"INV_{PASARAN[i+1]}"))
-            m.row(*row)
-        bot.send_message(chat_id, "Pilih Pasaran:", reply_markup=m)
+    if text == "📊 INVESTASI":
+        pilih_pasaran(chat_id)
 
-    elif data.startswith("INV_"):
-        p = data.split("_")[1]
-        user_mode[chat_id] = ("INVEST", p)
-        bot.send_message(chat_id, f"Input nominal {p}")
-
-    # ===== HASIL =====
-    elif data == "HASIL":
+    elif text == "💰 HASIL":
         user_mode[chat_id] = ("HASIL", "HASIL")
         bot.send_message(chat_id, "Input nominal HASIL")
 
-    # ===== REF =====
-    elif data == "REF":
-        m = InlineKeyboardMarkup()
-        for i in range(0, len(REF_LIST), 2):
-            row = []
-            row.append(InlineKeyboardButton(REF_LIST[i], callback_data=f"REF_{REF_LIST[i]}"))
-            if i+1 < len(REF_LIST):
-                row.append(InlineKeyboardButton(REF_LIST[i+1], callback_data=f"REF_{REF_LIST[i+1]}"))
-            m.row(*row)
-        bot.send_message(chat_id, "Pilih REF:", reply_markup=m)
+    elif text == "📥 REF":
+        pilih_ref(chat_id)
 
-    elif data.startswith("REF_"):
-        r = data.split("_")[1]
-        user_mode[chat_id] = ("REF", r)
-        bot.send_message(chat_id, f"Input nominal {r}")
+    elif text == "📊 LAPORAN":
+        pilih_laporan(chat_id)
 
-    # ===== LAPORAN =====
-    elif data == "LAPORAN":
-        m = InlineKeyboardMarkup()
-        m.row(
-            InlineKeyboardButton("Harian", callback_data="L1"),
-            InlineKeyboardButton("Mingguan", callback_data="L7")
-        )
-        m.row(
-            InlineKeyboardButton("Bulanan", callback_data="L30")
-        )
-        bot.send_message(chat_id, "📊 PILIH LAPORAN", reply_markup=m)
-
-    elif data == "L1":
-        laporan(chat_id, 1, "HARIAN")
-    elif data == "L7":
-        laporan(chat_id, 7, "MINGGUAN")
-    elif data == "L30":
-        laporan(chat_id, 30, "BULANAN")
-
-    # ===== HAPUS =====
-    elif data == "HAPUS":
+    elif text == "🗑️ HAPUS":
         hapus_menu(chat_id)
 
-    elif data.startswith("DEL_"):
-        idx = int(data.split("_")[1])
-        hapus(chat_id, idx)
+# ================= PASARAN =================
+def pilih_pasaran(chat_id):
+    m = ReplyKeyboardMarkup(resize_keyboard=True)
+
+    for i in range(0, len(PASARAN), 2):
+        row = []
+        row.append(PASARAN[i])
+        if i+1 < len(PASARAN):
+            row.append(PASARAN[i+1])
+        m.row(*row)
+
+    m.row("⬅️ BACK")
+
+    bot.send_message(chat_id, "Pilih Pasaran:", reply_markup=m)
+
+@bot.message_handler(func=lambda msg: msg.text in PASARAN)
+def handle_pasaran(msg):
+    chat_id = msg.chat.id
+    user_mode[chat_id] = ("INVEST", msg.text)
+    bot.send_message(chat_id, f"Input nominal {msg.text}")
+
+# ================= REF =================
+def pilih_ref(chat_id):
+    m = ReplyKeyboardMarkup(resize_keyboard=True)
+
+    for i in range(0, len(REF_LIST), 2):
+        row = []
+        row.append(REF_LIST[i])
+        if i+1 < len(REF_LIST):
+            row.append(REF_LIST[i+1])
+        m.row(*row)
+
+    m.row("⬅️ BACK")
+
+    bot.send_message(chat_id, "Pilih REF:", reply_markup=m)
+
+@bot.message_handler(func=lambda msg: msg.text in REF_LIST)
+def handle_ref(msg):
+    chat_id = msg.chat.id
+    user_mode[chat_id] = ("REF", msg.text)
+    bot.send_message(chat_id, f"Input nominal {msg.text}")
+
+# ================= LAPORAN =================
+def pilih_laporan(chat_id):
+    m = ReplyKeyboardMarkup(resize_keyboard=True)
+
+    m.row("HARIAN", "MINGGUAN")
+    m.row("BULANAN", "⬅️ BACK")
+
+    bot.send_message(chat_id, "📊 PILIH LAPORAN", reply_markup=m)
+
+@bot.message_handler(func=lambda msg: msg.text in ["HARIAN","MINGGUAN","BULANAN"])
+def handle_laporan(msg):
+    chat_id = msg.chat.id
+
+    if msg.text == "HARIAN":
+        laporan(chat_id, 1, "HARIAN")
+    elif msg.text == "MINGGUAN":
+        laporan(chat_id, 7, "MINGGUAN")
+    elif msg.text == "BULANAN":
+        laporan(chat_id, 30, "BULANAN")
+
+# ================= BACK =================
+@bot.message_handler(func=lambda msg: msg.text == "⬅️ BACK")
+def back(msg):
+    menu(msg.chat.id)
 
 # ================= INPUT =================
-@bot.message_handler(func=lambda msg: True)
+@bot.message_handler(func=lambda msg: msg.text and msg.text.isdigit())
 def handle_input(msg):
     chat_id = msg.chat.id
 
     if chat_id not in user_mode:
-        return
-
-    if not msg.text.isdigit():
-        bot.send_message(chat_id, "Masukkan angka saja")
         return
 
     jumlah = int(msg.text)
@@ -235,17 +244,36 @@ def hapus_menu(chat_id):
         bot.send_message(chat_id, "History kosong")
         return
 
-    m = InlineKeyboardMarkup()
-
+    text = "📋 HISTORY:\n\n"
     for i, h in enumerate(history):
-        txt = f"{h['time']} | {h['date']} | {h['type']} {rupiah(h['amount'])}"
-        m.add(InlineKeyboardButton(txt, callback_data=f"DEL_{i}"))
+        text += f"{i}. {h['time']} | {h['type']} {rupiah(h['amount'])}\n"
 
-    bot.send_message(chat_id, "Pilih data:", reply_markup=m)
+    text += "\nKetik nomor yang ingin dihapus"
 
-def hapus(chat_id, idx):
+    user_mode[chat_id] = ("DELETE", "DEL")
+
+    bot.send_message(chat_id, text)
+
+@bot.message_handler(func=lambda msg: msg.text and msg.text.isdigit())
+def handle_delete(msg):
+    chat_id = msg.chat.id
+
+    if chat_id not in user_mode:
+        return
+
+    mode, _ = user_mode[chat_id]
+
+    if mode != "DELETE":
+        return
+
+    idx = int(msg.text)
+
     db = load_db()
     user = db[today()]["users"][str(chat_id)]
+
+    if idx >= len(user["history"]):
+        bot.send_message(chat_id, "Index tidak valid")
+        return
 
     item = user["history"].pop(idx)
 
@@ -258,7 +286,8 @@ def hapus(chat_id, idx):
 
     save_db(db)
 
-    bot.send_message(chat_id, "🗑️ Dihapus")
+    bot.send_message(chat_id, "🗑️ Data dihapus")
+    user_mode.pop(chat_id)
     menu(chat_id)
 
 # ================= RUN =================

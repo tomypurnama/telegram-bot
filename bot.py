@@ -1,5 +1,5 @@
 import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import ReplyKeyboardMarkup
 import json, datetime, time
 from zoneinfo import ZoneInfo
 
@@ -28,11 +28,11 @@ def save_db(db):
     with open(DB_FILE, "w") as f:
         json.dump(db, f, indent=2)
 
-def today():
-    return str(datetime.date.today())
-
 def now():
-    return datetime.now(ZoneInfo("Asia/Jakarta"))
+    return datetime.datetime.now(ZoneInfo("Asia/Jakarta"))
+
+def today():
+    return now().strftime("%Y-%m-%d")
 
 def rupiah(n):
     return "Rp {:,}".format(n).replace(",", ".")
@@ -53,7 +53,6 @@ def init_user(db, chat_id):
 # ================= MENU =================
 def menu(chat_id):
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-
     m.row("📊 INVESTASI", "💰 HASIL")
     m.row("📥 REF", "📊 LAPORAN")
     m.row("🗑️ HAPUS")
@@ -65,7 +64,7 @@ def menu(chat_id):
 def start(msg):
     menu(msg.chat.id)
 
-# ================= MENU HANDLER =================
+# ================= MENU =================
 @bot.message_handler(func=lambda msg: msg.text in [
     "📊 INVESTASI","💰 HASIL","📥 REF","📊 LAPORAN","🗑️ HAPUS"
 ])
@@ -77,7 +76,7 @@ def menu_handler(msg):
         pilih_pasaran(chat_id)
 
     elif text == "💰 HASIL":
-        user_mode[chat_id] = ("HASIL", "HASIL")
+        user_mode[chat_id] = ("HASIL", None)
         bot.send_message(chat_id, "Input nominal HASIL")
 
     elif text == "📥 REF":
@@ -92,20 +91,15 @@ def menu_handler(msg):
 # ================= PASARAN =================
 def pilih_pasaran(chat_id):
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-
     for i in range(0, len(PASARAN), 2):
-        row = []
-        row.append(PASARAN[i])
-        if i+1 < len(PASARAN):
-            row.append(PASARAN[i+1])
+        row = PASARAN[i:i+2]
         m.row(*row)
-
     m.row("⬅️ BACK")
 
     bot.send_message(chat_id, "Pilih Pasaran:", reply_markup=m)
 
 @bot.message_handler(func=lambda msg: msg.text in PASARAN)
-def handle_pasaran(msg):
+def pilih_invest(msg):
     chat_id = msg.chat.id
     user_mode[chat_id] = ("INVEST", msg.text)
     bot.send_message(chat_id, f"Input nominal {msg.text}")
@@ -113,20 +107,15 @@ def handle_pasaran(msg):
 # ================= REF =================
 def pilih_ref(chat_id):
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-
     for i in range(0, len(REF_LIST), 2):
-        row = []
-        row.append(REF_LIST[i])
-        if i+1 < len(REF_LIST):
-            row.append(REF_LIST[i+1])
+        row = REF_LIST[i:i+2]
         m.row(*row)
-
     m.row("⬅️ BACK")
 
     bot.send_message(chat_id, "Pilih REF:", reply_markup=m)
 
 @bot.message_handler(func=lambda msg: msg.text in REF_LIST)
-def handle_ref(msg):
+def pilih_ref_input(msg):
     chat_id = msg.chat.id
     user_mode[chat_id] = ("REF", msg.text)
     bot.send_message(chat_id, f"Input nominal {msg.text}")
@@ -134,7 +123,6 @@ def handle_ref(msg):
 # ================= LAPORAN =================
 def pilih_laporan(chat_id):
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-
     m.row("HARIAN", "MINGGUAN")
     m.row("BULANAN", "⬅️ BACK")
 
@@ -156,22 +144,21 @@ def handle_laporan(msg):
 def back(msg):
     menu(msg.chat.id)
 
-# ================= INPUT =================
+# ================= INPUT ANGKA =================
 @bot.message_handler(func=lambda msg: msg.text and msg.text.isdigit())
-def handle_input(msg):
+def input_nominal(msg):
     chat_id = msg.chat.id
 
     if chat_id not in user_mode:
+        bot.send_message(chat_id, "Pilih menu dulu")
         return
 
+    mode, key = user_mode[chat_id]
     jumlah = int(msg.text)
-    dt = now()
 
     db = load_db()
     init_user(db, chat_id)
-
     user = db[today()]["users"][str(chat_id)]
-    mode, key = user_mode[chat_id]
 
     if mode == "INVEST":
         user["keluar"][key] = user["keluar"].get(key, 0) + jumlah
@@ -182,18 +169,77 @@ def handle_input(msg):
     elif mode == "REF":
         user["ref"][key] = user["ref"].get(key, 0) + jumlah
 
+    elif mode == "DELETE":
+        if key >= len(user["history"]):
+            bot.send_message(chat_id, "Index tidak valid")
+            return
+
+        item = user["history"].pop(key)
+
+        if item["type"] == "HASIL":
+            user["hasil"] -= item["amount"]
+        elif item["type"] in REF_LIST:
+            user["ref"][item["type"]] -= item["amount"]
+        else:
+            user["keluar"][item["type"]] -= item["amount"]
+
+        save_db(db)
+        bot.send_message(chat_id, "🗑️ Data dihapus")
+        user_mode.pop(chat_id)
+        menu(chat_id)
+        return
+
     user["history"].append({
-        "type": key,
+        "type": key if key else mode,
         "amount": jumlah,
-        "time": dt.strftime("%H:%M"),
-        "date": dt.strftime("%Y-%m-%d")
+        "time": now().strftime("%H:%M"),
+        "date": today()
     })
 
     save_db(db)
 
-    bot.send_message(chat_id, f"✅ {key} {rupiah(jumlah)}")
+    bot.send_message(chat_id, f"✅ {mode} {rupiah(jumlah)}")
     user_mode.pop(chat_id)
     menu(chat_id)
+
+# ================= HAPUS =================
+def hapus_menu(chat_id):
+    db = load_db()
+    t = today()
+
+    if t not in db or str(chat_id) not in db[t]["users"]:
+        bot.send_message(chat_id, "Tidak ada data")
+        return
+
+    history = db[t]["users"][str(chat_id)]["history"]
+
+    if not history:
+        bot.send_message(chat_id, "History kosong")
+        return
+
+    text = "📋 HISTORY:\n\n"
+    for i, h in enumerate(history):
+        text += f"{i}. {h['time']} | {h['type']} {rupiah(h['amount'])}\n"
+
+    text += "\nKetik nomor yang ingin dihapus"
+
+    bot.send_message(chat_id, text)
+    user_mode[chat_id] = ("DELETE", None)
+
+@bot.message_handler(func=lambda msg: msg.text and msg.text.isdigit())
+def delete_handler(msg):
+    chat_id = msg.chat.id
+
+    if chat_id not in user_mode:
+        return
+
+    mode, _ = user_mode[chat_id]
+
+    if mode != "DELETE":
+        return
+
+    user_mode[chat_id] = ("DELETE", int(msg.text))
+    input_nominal(msg)
 
 # ================= LAPORAN =================
 def laporan(chat_id, days, label):
@@ -202,7 +248,8 @@ def laporan(chat_id, days, label):
     keluar, hasil, ref = 0, 0, 0
 
     for i in range(days):
-        d = str(datetime.date.today() - datetime.timedelta(days=i))
+        d = (now() - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
+
         if d not in db:
             continue
         if str(chat_id) not in db[d]["users"]:
@@ -226,69 +273,8 @@ f"""📊 LAPORAN {label}
 
 📈 Profit: {rupiah(profit)}
 
-🕒 Update: {datetime.datetime.now().strftime("%H:%M")}
+🕒 Update: {now().strftime("%H:%M")} WIB
 """)
-
-# ================= HAPUS =================
-def hapus_menu(chat_id):
-    db = load_db()
-    t = today()
-
-    if t not in db or str(chat_id) not in db[t]["users"]:
-        bot.send_message(chat_id, "Tidak ada data")
-        return
-
-    history = db[t]["users"][str(chat_id)]["history"]
-
-    if not history:
-        bot.send_message(chat_id, "History kosong")
-        return
-
-    text = "📋 HISTORY:\n\n"
-    for i, h in enumerate(history):
-        text += f"{i}. {h['time']} | {h['type']} {rupiah(h['amount'])}\n"
-
-    text += "\nKetik nomor yang ingin dihapus"
-
-    user_mode[chat_id] = ("DELETE", "DEL")
-
-    bot.send_message(chat_id, text)
-
-@bot.message_handler(func=lambda msg: msg.text and msg.text.isdigit())
-def handle_delete(msg):
-    chat_id = msg.chat.id
-
-    if chat_id not in user_mode:
-        return
-
-    mode, _ = user_mode[chat_id]
-
-    if mode != "DELETE":
-        return
-
-    idx = int(msg.text)
-
-    db = load_db()
-    user = db[today()]["users"][str(chat_id)]
-
-    if idx >= len(user["history"]):
-        bot.send_message(chat_id, "Index tidak valid")
-        return
-
-    item = user["history"].pop(idx)
-
-    if item["type"] == "HASIL":
-        user["hasil"] -= item["amount"]
-    elif item["type"] in REF_LIST:
-        user["ref"][item["type"]] -= item["amount"]
-    else:
-        user["keluar"][item["type"]] -= item["amount"]
-
-    save_db(db)
-
-    bot.send_message(chat_id, "🗑️ Data dihapus")
-    user_mode.pop(chat_id)
-    menu(chat_id)
 
 # ================= RUN =================
 bot.infinity_polling()
